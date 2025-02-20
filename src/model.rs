@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::vec;
-
+use crate::operators::{rms_norm,matmul_transb,swiglu};
 use crate::config::LlamaConfigJson;
 use crate::kvcache::KVCache;
 use crate::operators as OP;
@@ -167,7 +167,25 @@ fn mlp(
     rms_w: &Tensor<f32>,
     eps: f32,
 ) {
-    todo!("Implement mlp");
+    // todo!("Implement mlp");
+    let new_shape = residual.shape().clone();
+    let num_elements = new_shape.iter().product::<usize>();
+    let new_data = vec![0.0; num_elements];
+    let mut output = Tensor::<f32>::new(new_data, &new_shape);
+
+    rms_norm(hidden_states,  &residual, &rms_w, eps);
+    matmul_transb( gate, 0., &hidden_states, &w_gate, 1.);
+    matmul_transb(up, 0., &hidden_states, &w_up, 1.);
+    swiglu(up, gate);
+    matmul_transb( &mut output, 0., &up, &w_down, 1.);
+
+    let len = residual.size();
+    let _residual = unsafe { residual.data_mut() };
+    let _output = output.data();
+    for i in 0..len {
+        _residual[i] = _residual[i]+_output[i];
+    }
+    println!("{:?}",residual.data());
 }
 
 #[test]

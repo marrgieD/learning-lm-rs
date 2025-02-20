@@ -42,9 +42,9 @@ pub fn rope(y: &mut Tensor<f32>, start_pos: usize, theta: f32) {
 pub fn masked_softmax(y: &mut Tensor<f32>) {
     let ndim = y.shape().len();
     assert!(ndim >= 2);
-    let seq_len = y.shape()[ndim - 2];
+    let seq_len = y.shape()[ndim - 2]; 
     let total_seq_len = y.shape()[ndim - 1];
-    let batch = y.size() / (seq_len * total_seq_len);
+    let batch = y.size() / (seq_len * total_seq_len);//https://laplacedemon.gitbooks.io/-rust/content/shu-xue-ji-suan.html
     let data = unsafe { y.data_mut() };
     for b in 0..batch {
         let base = b * seq_len * total_seq_len;
@@ -71,25 +71,90 @@ pub fn masked_softmax(y: &mut Tensor<f32>) {
 }
 
 pub fn rms_norm(y: &mut Tensor<f32>, x: &Tensor<f32>, w: &Tensor<f32>, epsilon: f32) {
-    todo!("实现 rms_norm，计算前做一些必要的检查会帮助你后续调试")
+    let ndim = x.shape().len();
+    let ndim_y = y.shape().len();
+    let ndim_w = w.shape().len();
+
+     // 检查维度是否匹配
+    // assert!(x.shape()[ndim-1]==y.shape()[ndim_y-1]);
+    // assert!(x.shape()[ndim-2]==w.shape()[ndim_w-1]);
+
+    let seq_len = y.shape()[ndim - 2]; //2行
+    let total_seq_len = y.shape()[ndim - 1];//3列 
+
+    // let batch = y.size() / seq_len ; 
+    let _x = unsafe { x.data() };  // 获取输入 x 的数据
+    let _w = unsafe { w.data() };  // 获取权重 w 的数据
+    let mut _y= unsafe { y.data_mut() };  // 获取输出 y 的数据
+    
+    for i in 0..seq_len {
+        let base = i * total_seq_len;
+        let mut rms2 = 0.0;
+
+        for j in 0..total_seq_len{
+            let offset = j + base;
+            rms2 = rms2 +_x[offset]*_x[offset];
+
+        }
+
+        let rms = (rms2/ total_seq_len as f32 + epsilon).sqrt();
+
+        for j in 0..total_seq_len{
+            let offset = j + base;
+            let weight = _w[j]/rms;
+            _y[offset] = weight * _x[offset];
+        }
+    }
 }
 
 // y = silu(x) * y
 // hint: this is an element-wise operation
 pub fn swiglu(y: &mut Tensor<f32>, x: &Tensor<f32>) {
-    // let len = y.size();
-    // assert!(len == x.size());
+    let len = y.size();
+    assert!(len == x.size());
 
-    // let _y = unsafe { y.data_mut() };
-    // let _x = x.data();
-
-    todo!("实现 silu，这里给了一些前期准备工作的提示，你可以参考")
+    let _y = unsafe { y.data_mut() };
+    let _x = x.data();
+    for i in 0..len {
+        //sigmod
+        let sigmod_x = 1.0 /(1.0 + (-_x[i]).exp());
+        let silu_x = sigmod_x * _x[i];
+        _y[i] = silu_x * _y[i];
+    }
+    
+    // todo!("实现 silu，这里给了一些前期准备工作的提示，你可以参考")
 }
 
 // C = beta * C + alpha * A @ B^T
 // hint: You don't need to do an explicit transpose of B
-pub fn matmul_transb(c: &mut Tensor<f32>, beta: f32, a: &Tensor<f32>, b: &Tensor<f32>, alpha: f32) {
-    todo!("实现 matmul_transb，计算前做一些必要的检查会帮助你后续调试");
+pub fn  matmul_transb(c: &mut Tensor<f32>, beta: f32, a: &Tensor<f32>, b: &Tensor<f32>, alpha: f32) {
+    // todo!("实现 matmul_transb，计算前做一些必要的检查会帮助你后续调试");
+    assert!(a.shape().len()==2);
+    assert!(b.shape().len()==2);
+    assert!(c.shape().len()==2);
+
+     // 检查维度是否匹配
+    assert!(a.shape()[0]==c.shape()[0]);
+    assert!(a.shape()[1]==b.shape()[1]);
+    assert!(b.shape()[0]==c.shape()[1]);
+    
+
+    let a_row = a.shape()[0]; //2行
+    let a_line = a.shape()[1];//3列 
+    let b_row = b.shape()[0]; //4行
+
+    let _a = unsafe { a.data() };  
+    let _b = unsafe { b.data() };  
+    let mut _c= unsafe { c.data_mut() };  
+    for i in 0..a_row { //2行
+        let base = i * a_line;
+        for j in 0..b_row{//4列
+            _c[i*b_row+j]=beta*_c[i*b_row+j];
+            for k in 0..a_line{//3
+                _c[i*b_row+j]+=alpha* _a[i*a_line+k]*_b[j*a_line+k];
+            }
+        }
+    }   
 }
 
 // Dot product of two tensors (treated as vectors)
@@ -197,6 +262,7 @@ fn test_rms_norm() {
         1e-3
     ));
 }
+
 
 #[test]
 fn test_matmul_transb() {
