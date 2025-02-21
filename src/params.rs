@@ -24,29 +24,33 @@ impl LLamaParams<f32> {
     pub fn from_safetensors(safetensor: &SafeTensors, config: &LlamaConfigJson) -> Self {
         // todo!("实现从safetensors文件的模型参数加载");
         let get_tensor = |name: &str| -> Tensor<f32> {
-            let tensor_view = safetensor.tensor(name).expect(&format!("Tensor {} not found", name));
-            let data = tensor_view.data();
-            let len = tensor_view.data_len();
-            let shape = tensor_view.shape().to_vec();
+            let tensor = safetensor.tensor(name).unwrap();
+            let data = tensor.data();
 
-            let mut data_vec = vec![0.0; len];
-            for i in 0..len {
-                data_vec[i] = data[i] as f32;
+            // let mut data_vec = vec![0.0; len]; 不可强制转换
+
+            //创建一个向量，同时预先为其分配指定大小的内存空间。
+            //一个 f32 类型的数据在内存中占用 4 个字节，而 data 是存储字节数据的切片，所以 data.len() / 4 计算出的就是 data 里能够转换得到的 f32 元素的数量。 
+            let mut values: Vec<f32> = Vec::with_capacity(data.len() / 4);
+            // 将 4 个字节的数组转换为 f32 类型的函数
+            for chunk in data.chunks_exact(4) {
+                values.push(f32::from_le_bytes(chunk.try_into().unwrap()));
             }
-
-            Tensor::new(data_vec, &shape)
+            Tensor::<f32>::new(values, &tensor.shape().to_vec())
         };
+
 
         let num_layers = config.num_hidden_layers as usize;
         let num_heads = config.num_attention_heads as usize;
 
         LLamaParams {
-            embedding_table: get_tensor("model.embed_tokens.weight"),
-            lm_head: if config.tie_word_embeddings {
-                get_tensor("model.embed_tokens.weight")  // 复用 embedding_table
-            } else {
-                get_tensor("lm_head.weight")
-            },
+            embedding_table: get_tensor(&format!("lm_head.weight")),
+            lm_head: get_tensor(&format!("lm_head.weight")),
+            // lm_head: if config.tie_word_embeddings {
+            //     get_tensor("embedding_tokens.weight")  // 复用 embedding_table
+            // } else {
+            //     get_tensor("lm_head.weight")
+            // },
             rms_att_w: (0..num_layers).map(|i| get_tensor(&format!("model.layers.{}.input_layernorm.weight", i))).collect(),
             rms_ffn_w: (0..num_layers).map(|i| get_tensor(&format!("model.layers.{}.post_attention_layernorm.weight", i))).collect(),
             rms_out_w: get_tensor("model.norm.weight"),
